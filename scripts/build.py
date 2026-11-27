@@ -185,9 +185,8 @@ def main() -> int:
     channels.sort(key=lambda c: (priority.get(c["group"], 10), c["group"], c["name"].casefold()))
 
     header = (
-        "#EXTM3U\n"
+        '#EXTM3U x-tvg-url="https://xmltv.live/epg/ru.xml.gz"\n'
         '#PLAYLIST:name="Russian & European IPTV"\n'
-        '#EXT-X-TVG-URL="https://xmltv.live/epg/ru.xml.gz"\n'
     )
     with OUT.open("w", encoding="utf-8", newline="\n") as output:
         output.write(header)
