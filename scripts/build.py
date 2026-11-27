@@ -13,13 +13,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "playlist.m3u"
 
+# Keep this list explicit: the report records every independent catalog used.
 SOURCES = [
-    ("https://iptv-org.github.io/iptv/languages/rus.m3u", "rus"),
-    ("https://iptv-org.github.io/iptv/countries/ru.m3u", "country"),
-    ("https://iptv-org.github.io/iptv/countries/by.m3u", "country"),
-    ("https://iptv-org.github.io/iptv/countries/ua.m3u", "country"),
-    ("https://iptv-org.github.io/iptv/categories/news.m3u", "europe-news"),
-    ("https://gist.githubusercontent.com/kingleone017/992c1bc81bbb3974bb1cb68f2eb54c16/raw/", "xxx"),
+    ("https://iptv-org.github.io/iptv/languages/rus.m3u", "rus", "iptv-org / Russian"),
+    ("https://iptv-org.github.io/iptv/countries/ru.m3u", "country", "iptv-org / Russia"),
+    ("https://iptv-org.github.io/iptv/countries/by.m3u", "country", "iptv-org / Belarus"),
+    ("https://iptv-org.github.io/iptv/countries/ua.m3u", "country", "iptv-org / Ukraine"),
+    ("https://iptv-org.github.io/iptv/categories/news.m3u", "europe-news", "iptv-org / European news"),
+    ("https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_russia.m3u8", "candidate", "Free-TV / Russia"),
+    ("https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_belarus.m3u8", "candidate", "Free-TV / Belarus"),
+    ("https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_ukraine.m3u8", "candidate", "Free-TV / Ukraine"),
+    ("https://raw.githubusercontent.com/streamline-iptv/iptv-playlists/dist/languages/rus.m3u", "candidate", "streamline-iptv / Russian"),
+    ("https://dearbulut.github.io/iptv/playlists/country/ru.m3u", "candidate", "dearbulut / Russia"),
+    ("https://raw.githubusercontent.com/ngrch/iptv/master/ru.m3u", "candidate", "ngrch / Russia"),
+    ("https://raw.githubusercontent.com/FoxStudio24/IPTV/main/PMR.m3u8", "candidate", "FoxStudio24 / PMR"),
+    ("https://raw.githubusercontent.com/yxcqr/viptv-work-iptv/main/XXXTV.m3u", "xxx", "yxcqr / XXXTV"),
+    ("https://raw.githubusercontent.com/yxcqr/viptv-work-iptv/main/Adult.m3u", "xxx", "yxcqr / Adult"),
+    ("https://raw.githubusercontent.com/zeckelektronik/adultasian/main/adult-5951", "xxx", "zeckelektronik / Adult Asian"),
+    ("https://raw.githubusercontent.com/syukriadi/iptv/master/xxx.txt", "xxx", "syukriadi / XXX"),
+    ("https://gist.githubusercontent.com/kingleone017/992c1bc81bbb3974bb1cb68f2eb54c16/raw/", "xxx", "public gist / XXX"),
+    ("https://gist.githubusercontent.com/639936/ee108ef4fc3eadcc23c41408fa0d107e/raw/", "xxx", "public gist / XXX 2"),
 ]
 
 EUROPE_NEWS = re.compile(
@@ -54,7 +67,7 @@ def fetch(url: str) -> str:
         return response.read().decode("utf-8", "replace")
 
 
-def parse(text: str, source_kind: str) -> list[dict[str, str]]:
+def parse(text: str, source_kind: str, source_name: str) -> list[dict[str, str]]:
     lines = [x.strip() for x in text.splitlines()]
     result = []
     for i, line in enumerate(lines):
@@ -79,6 +92,7 @@ def parse(text: str, source_kind: str) -> list[dict[str, str]]:
                 "logo": logo_match.group(1) if logo_match else "",
                 "group": group,
                 "url": url,
+                "source": source_name,
             }
         )
     return result
@@ -104,11 +118,11 @@ def main() -> int:
     channels: list[dict[str, str]] = []
     errors = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        jobs = {pool.submit(fetch, url): (url, kind) for url, kind in SOURCES}
+        jobs = {pool.submit(fetch, url): (url, kind, name) for url, kind, name in SOURCES}
         for job in concurrent.futures.as_completed(jobs):
-            url, kind = jobs[job]
+            url, kind, source_name = jobs[job]
             try:
-                channels.extend(parse(job.result(), kind))
+                channels.extend(parse(job.result(), kind, source_name))
             except Exception as exc:
                 errors.append(f"{url}: {exc}")
 
@@ -153,7 +167,10 @@ def main() -> int:
         f"verified_channels={verified_count}\n"
         f"unverified_18plus={sum(c['group'] == '18+' for c in channels if c['group'] == '18+')}\n"
         + "\n".join(f"{group}={sum(c['group'] == group for c in channels)}" for group in sorted({c["group"] for c in channels}))
-        + ("\nsource_errors=\n" + "\n".join(errors) if errors else "\nsource_errors=none")
+        + "\nsource_errors=\n"
+        + ("\n".join(errors) if errors else "none")
+        + "\nsource_catalogs=" + str(len(SOURCES))
+        + "\n"
         + "\n",
         encoding="utf-8",
     )
