@@ -33,6 +33,7 @@ SOURCES = [
     ("https://raw.githubusercontent.com/syukriadi/iptv/master/xxx.txt", "xxx", "syukriadi / XXX"),
     ("https://gist.githubusercontent.com/kingleone017/992c1bc81bbb3974bb1cb68f2eb54c16/raw/", "xxx", "public gist / XXX"),
     ("https://gist.githubusercontent.com/639936/ee108ef4fc3eadcc23c41408fa0d107e/raw/", "xxx", "public gist / XXX 2"),
+    ("https://gist.githubusercontent.com/tirictic/3ba3098b930100673a2e92def5331110/raw/", "redtraffic", "public gist / RedTraffic"),
 ]
 
 EUROPE_NEWS = re.compile(
@@ -42,6 +43,16 @@ EUROPE_NEWS = re.compile(
     re.I,
 )
 ADULT = re.compile(r"\b(XXX|Adult|Porn|Sex|Erotic|Barely Legal|Private|Hustler)\b", re.I)
+VOD = re.compile(
+    r"\b(vod|movie|film|clip|trailer|episode|series|сериал|фильм|ролик|video)\b|"
+    r"(/vod/|/movie/|/movies/|/videos/|/clips?/|\.mp4(?:$|[?&])|\.mkv(?:$|[?&])|\.avi(?:$|[?&]))",
+    re.I,
+)
+LIVE = re.compile(
+    r"(\.m3u8(?:$|[?&])|\.ts(?:$|[?&])|rtmp://|/live(?:/|$)|/stream(?:/|$)|"
+    r"/channel(?:/|$)|/hls(?:/|$)|playlist\.m3u8)",
+    re.I,
+)
 
 GROUPS = {
     "News": "Новости",
@@ -67,7 +78,7 @@ def fetch(url: str) -> str:
         return response.read().decode("utf-8", "replace")
 
 
-def parse(text: str, source_kind: str, source_name: str) -> list[dict[str, str]]:
+def parse(text: str, source_kind: str, source_name: str, counters: dict[str, int]) -> list[dict[str, str]]:
     lines = [x.strip() for x in text.splitlines()]
     result = []
     for i, line in enumerate(lines):
@@ -84,7 +95,16 @@ def parse(text: str, source_kind: str, source_name: str) -> list[dict[str, str]]
             continue
         if source_kind == "xxx" and not ADULT.search(name + " " + line):
             continue
-        group = "18+" if source_kind == "xxx" else GROUPS.get(group_match.group(1) if group_match else "", "Общие")
+        if source_kind == "redtraffic" and (
+            "redtraffic" not in url.lower() or "livecams" in url.lower()
+        ):
+            continue
+        if source_kind in {"xxx", "redtraffic"}:
+            candidate = f"{name} {line} {url}"
+            if VOD.search(candidate) or not LIVE.search(url):
+                counters["adult_vod_or_nonlive"] += 1
+                continue
+        group = "18+" if source_kind in {"xxx", "redtraffic"} else GROUPS.get(group_match.group(1) if group_match else "", "Общие")
         result.append(
             {
                 "id": id_match.group(1) if id_match else "",
@@ -116,13 +136,14 @@ def probe(channel: dict[str, str]) -> bool:
 
 def main() -> int:
     channels: list[dict[str, str]] = []
+    counters = {"adult_vod_or_nonlive": 0}
     errors = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         jobs = {pool.submit(fetch, url): (url, kind, name) for url, kind, name in SOURCES}
         for job in concurrent.futures.as_completed(jobs):
             url, kind, source_name = jobs[job]
             try:
-                channels.extend(parse(job.result(), kind, source_name))
+                channels.extend(parse(job.result(), kind, source_name, counters))
             except Exception as exc:
                 errors.append(f"{url}: {exc}")
 
@@ -166,6 +187,7 @@ def main() -> int:
         f"channels={len(channels)}\n"
         f"verified_channels={verified_count}\n"
         f"unverified_18plus={sum(c['group'] == '18+' for c in channels if c['group'] == '18+')}\n"
+        f"adult_vod_or_nonlive_excluded={counters['adult_vod_or_nonlive']}\n"
         + "\n".join(f"{group}={sum(c['group'] == group for c in channels)}" for group in sorted({c["group"] for c in channels}))
         + "\nsource_errors=\n"
         + ("\n".join(errors) if errors else "none")
