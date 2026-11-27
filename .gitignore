@@ -1,2 +1,5 @@
 __pycache__/
 .pytest_cache/
+android-player/local.properties
+android-player/.gradle/
+android-player/app/build/

@@ -50,9 +50,11 @@ VOD = re.compile(
 )
 LIVE = re.compile(
     r"(\.m3u8(?:$|[?&])|\.ts(?:$|[?&])|rtmp://|/live(?:/|$)|/stream(?:/|$)|"
-    r"/channel(?:/|$)|/hls(?:/|$)|playlist\.m3u8)",
+    r"/channel(?:/|$)|/hls(?:/|$)|/manifest(?:/|$)|playlist(?:\.m3u8)?(?:$|[?&]))",
     re.I,
 )
+TIMEZONE = re.compile(r"\s*(?:UTC|GMT)\s*[+-]?\s*\d{1,2}(?::\d{2})?|\s*[+-]\d{1,2}(?::\d{2})?\s*$", re.I)
+QUALITY = re.compile(r"\s*[\[(]\s*(?:\d{3,4}p|4k|fhd|hd|sd|uhd)[^\])]*[\])]\s*$", re.I)
 
 GROUPS = {
     "News": "Новости",
@@ -95,15 +97,16 @@ def parse(text: str, source_kind: str, source_name: str, counters: dict[str, int
             continue
         if source_kind == "xxx" and not ADULT.search(name + " " + line):
             continue
-        if source_kind == "redtraffic" and (
-            "redtraffic" not in url.lower() or "livecams" in url.lower()
-        ):
+        if source_kind == "redtraffic" and ("redtraffic" not in url.lower() or "livecams" in url.lower()):
             continue
-        if source_kind in {"xxx", "redtraffic"}:
-            candidate = f"{name} {line} {url}"
-            if VOD.search(candidate) or not LIVE.search(url):
+        candidate = f"{name} {line} {url}"
+        if VOD.search(candidate) or not LIVE.search(url):
+            counters["vod_or_nonlive"] += 1
+            if source_kind in {"xxx", "redtraffic"}:
                 counters["adult_vod_or_nonlive"] += 1
-                continue
+            continue
+        name = QUALITY.sub("", name)
+        name = TIMEZONE.sub("", name).strip()
         group = "18+" if source_kind in {"xxx", "redtraffic"} else GROUPS.get(group_match.group(1) if group_match else "", "Общие")
         result.append(
             {
@@ -136,7 +139,7 @@ def probe(channel: dict[str, str]) -> bool:
 
 def main() -> int:
     channels: list[dict[str, str]] = []
-    counters = {"adult_vod_or_nonlive": 0}
+    counters = {"adult_vod_or_nonlive": 0, "vod_or_nonlive": 0}
     errors = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         jobs = {pool.submit(fetch, url): (url, kind, name) for url, kind, name in SOURCES}
@@ -148,8 +151,16 @@ def main() -> int:
                 errors.append(f"{url}: {exc}")
 
     unique: dict[str, dict[str, str]] = {}
+    seen: set[str] = set()
     for channel in channels:
-        unique.setdefault(key(channel), channel)
+        aliases = {
+            re.sub(r"[@._-](?:sd|hd|fhd|uhd|4k)$", "", channel["id"].lower()),
+            re.sub(r"[^a-zа-яё0-9]", "", channel["name"].lower()),
+        }
+        if any(alias and alias in seen for alias in aliases):
+            continue
+        seen.update(alias for alias in aliases if alias)
+        unique[key(channel)] = channel
     channels = list(unique.values())
 
     verified_count = len(channels)
@@ -188,6 +199,7 @@ def main() -> int:
         f"verified_channels={verified_count}\n"
         f"unverified_18plus={sum(c['group'] == '18+' for c in channels if c['group'] == '18+')}\n"
         f"adult_vod_or_nonlive_excluded={counters['adult_vod_or_nonlive']}\n"
+        f"vod_or_nonlive_excluded={counters['vod_or_nonlive']}\n"
         + "\n".join(f"{group}={sum(c['group'] == group for c in channels)}" for group in sorted({c["group"] for c in channels}))
         + "\nsource_errors=\n"
         + ("\n".join(errors) if errors else "none")
