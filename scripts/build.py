@@ -45,7 +45,8 @@ EUROPE_NEWS = re.compile(
 ADULT = re.compile(r"\b(XXX|Adult|Porn|Sex|Erotic|Barely Legal|Private|Hustler)\b", re.I)
 VOD = re.compile(
     r"\b(vod|movie|film|clip|trailer|episode|series|сериал|фильм|ролик|video)\b|"
-    r"(/vod/|/movie/|/movies/|/videos/|/clips?/|\.mp4(?:$|[?&])|\.mkv(?:$|[?&])|\.avi(?:$|[?&]))",
+    r"(/vod/|/movie/|/movies/|/videos/|/clips?/|[/_-](?:movie|film|episode|clip|video)\d*[^/]*\.(?:m3u8|mp4|mkv)|"
+    r"\.mp4(?:$|[?&])|\.mkv(?:$|[?&])|\.avi(?:$|[?&])|/radio(?:/|$)|radio\.)",
     re.I,
 )
 LIVE = re.compile(
@@ -55,6 +56,8 @@ LIVE = re.compile(
 )
 TIMEZONE = re.compile(r"\s*(?:UTC|GMT)\s*[+-]?\s*\d{1,2}(?::\d{2})?|\s*[+-]\d{1,2}(?::\d{2})?\s*$", re.I)
 QUALITY = re.compile(r"\s*[\[(]\s*(?:\d{3,4}p|4k|fhd|hd|sd|uhd)[^\])]*[\])]\s*$", re.I)
+META = re.compile(r"\s*(?:\[[^\]]+\]|\([^)]*(?:p|4k|not 24/7|geo-blocked)[^)]*\))\s*$", re.I)
+TITLE_VOD = re.compile(r"(?:^|[\s_.-])(vod|video|movie\d+|film\d+|episode\d+|clip\d+)(?:[\s_.-]|$)", re.I)
 
 GROUPS = {
     "News": "Новости",
@@ -100,12 +103,13 @@ def parse(text: str, source_kind: str, source_name: str, counters: dict[str, int
         if source_kind == "redtraffic" and ("redtraffic" not in url.lower() or "livecams" in url.lower()):
             continue
         candidate = f"{name} {line} {url}"
-        if VOD.search(candidate) or not LIVE.search(url):
+        if VOD.search(candidate) or TITLE_VOD.search(name) or not LIVE.search(url):
             counters["vod_or_nonlive"] += 1
             if source_kind in {"xxx", "redtraffic"}:
                 counters["adult_vod_or_nonlive"] += 1
             continue
         name = QUALITY.sub("", name)
+        name = META.sub("", name)
         name = TIMEZONE.sub("", name).strip()
         group = "18+" if source_kind in {"xxx", "redtraffic"} else GROUPS.get(group_match.group(1) if group_match else "", "Общие")
         result.append(
@@ -155,7 +159,7 @@ def main() -> int:
     for channel in channels:
         aliases = {
             re.sub(r"[@._-](?:sd|hd|fhd|uhd|4k)$", "", channel["id"].lower()),
-            re.sub(r"[^a-zа-яё0-9]", "", channel["name"].lower()),
+            re.sub(r"[^a-zа-яё0-9]", "", META.sub("", channel["name"]).lower()),
         }
         if any(alias and alias in seen for alias in aliases):
             continue
