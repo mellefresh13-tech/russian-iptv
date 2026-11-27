@@ -1,5 +1,5 @@
-channels=1064
-verified_channels=1041
+channels=1038
+verified_channels=982
 unverified_18plus=84
 adult_vod_or_nonlive_excluded=1158
 vod_or_nonlive_excluded=1462
@@ -7,13 +7,13 @@ vod_or_nonlive_excluded=1462
 Детские=18
 Документальные=11
 Культура=4
-Музыка=32
-Новости=64
-Общие=757
+Музыка=27
+Новости=58
+Общие=743
 Познавательные=2
-Развлекательные=22
+Развлекательные=23
 Религиозные=14
-Спорт=14
+Спорт=12
 Фильмы=42
 source_errors=
 none
